@@ -1,56 +1,80 @@
 import os
 import csv
-import sys
-from collections import defaultdict
 from PIL import Image
-from PIL.ExifTags import TAGS
+from collections import defaultdict
 
 def get_exif_data(image_path):
     try:
         image = Image.open(image_path)
-        info = image._getexif()
-        if info is not None:
-            exif_data = {TAGS.get(tag): value for tag, value in info.items() if tag in TAGS}
-            if 'DateTimeOriginal' in exif_data:
-                return exif_data['DateTimeOriginal']
+        image.verify()  # Verify that it is, in fact, an image
+        image = Image.open(image_path)
+        exif = image._getexif()
+        if not exif:
+            return None, None
+        exif_date = exif.get(36867)  # DateTimeOriginal tag
+        return exif_date, os.path.getsize(image_path) / (1024 * 1024)  # File size in MB
     except Exception as e:
-        print(f"Error getting EXIF data for {image_path}: {e}")
-    return None
+        return None, None
 
-def get_image_info(root_dir):
-    file_dict = defaultdict(list)
-    for root, _, files in os.walk(root_dir):
+def find_duplicates(root_dir):
+    files_by_name = defaultdict(list)
+
+    for subdir, _, files in os.walk(root_dir):
         for file in files:
-            if file.lower().endswith(('jpg', 'jpeg', 'png', 'tiff', 'bmp', 'gif')):
-                full_path = os.path.join(root, file)
-                file_size = os.path.getsize(full_path)
-                date_taken = get_exif_data(full_path)
-                file_dict[file].append((full_path, date_taken, file_size))
-    return file_dict
+            file_path = os.path.join(subdir, file)
+            files_by_name[file].append(file_path)
 
-def write_to_csv(file_dict, output_csv):
-    with open(output_csv, 'w', newline='', encoding='utf-8') as csvfile:
-        csv_writer = csv.writer(csvfile)
-        csv_writer.writerow(['File Name', 'Full Path', 'Date Taken', 'File Size'])
-        for file_name, file_info_list in file_dict.items():
-            for file_info in file_info_list:
-                csv_writer.writerow([file_name, file_info[0], file_info[1], file_info[2]])
+    duplicates = {k: v for k, v in files_by_name.items() if len(v) > 1}
+    return duplicates
+
+def save_duplicates_to_csv(duplicates, root_dir):
+    batch_size = 50
+    file_index = 1
+    count = 0
+
+    csvfile = open(f'output_{file_index}.csv', 'w', newline='')
+    fieldnames = ['FileName', 'RelativePath', 'Path1', 'Path2', 'DateTaken', 'FileSizeMB']
+    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+    writer.writeheader()
+
+    for filename, paths in duplicates.items():
+        if len(paths) < 2:
+            continue
+
+        for i in range(len(paths) - 1):
+            relative_path = os.path.relpath(os.path.commonpath([paths[i], paths[i + 1]]), start=root_dir)
+            date_taken, file_size = get_exif_data(paths[i])
+            row = {
+                'FileName': filename,
+                'RelativePath': relative_path,
+                'Path1': paths[i],
+                'Path2': paths[i + 1],
+                'DateTaken': date_taken if date_taken else 'N/A',
+                'FileSizeMB': file_size if file_size else 'N/A'
+            }
+            writer.writerow(row)
+            count += 1
+
+            if count % batch_size == 0:
+                csvfile.flush()
+                csvfile.close()
+                file_index += 1
+                csvfile = open(f'output_{file_index}.csv', 'w', newline='')
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+
+    if count % batch_size != 0:
+        csvfile.flush()
+        csvfile.close()
 
 def main(root_dir):
-    output_csv = 'output.csv'
-    file_dict = get_image_info(root_dir)
-    write_to_csv(file_dict, output_csv)
-    print(f"CSV file has been created at {output_csv}")
+    duplicates = find_duplicates(root_dir)
+    save_duplicates_to_csv(duplicates, root_dir)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
+    import sys
     if len(sys.argv) != 2:
-        print("Usage: python script_name.py <directory_path>")
+        print("Usage: python script.py <root_directory>")
         sys.exit(1)
-    
-    root_dir = sys.argv[1]
-    if not os.path.isdir(root_dir):
-        print(f"The provided path '{root_dir}' is not a valid directory.")
-        sys.exit(1)
-    
-    main(root_dir)
-
+    root_directory = sys.argv[1]
+    main(root_directory)
