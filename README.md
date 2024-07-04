@@ -4,7 +4,7 @@ Coded by chatGPT
 
 ## Writing an image sorter with ChatGPT.
 
-I used the free version of ChatGPT to write an image-sorter in Python. The prompts I used are in the codeblocks. The final script is called main.py. 
+I used the free version of ChatGPT to write an image-sorter in Python. The prompts I used are in the codeblocks. The final script is called main.py. Remember to use a virtual environment and install the libraries in requirements. 
 
 I have a Camera Roll folder that’s 125 GB. Many of the images are duplicates spread across different subfolders. I want a script that lists all the duplicate images in a CSV file. The start point was the following prompt to chatGPT. 
 
